@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Home</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Home</h1>
+
+    
+
+
+
+    
+
+
+    <h3> </h3>
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+    <section>
+        <article><h1>Asynchronous iterators for JavaScript</h1><p><strong>AsyncIterator is a lightweight JavaScript implementation of demand-driven object streams,</strong>
+and an alternative to the two-way flow controlled <a href="https://nodejs.org/api/stream.html">Node.js <code>Stream</code></a>.
+As opposed to <code>Stream</code>, you cannot <em>push</em> anything into an <code>AsyncIterator</code>;
+instead, an iterator <em>pulls</em> things from another iterator.
+This eliminates the need for expensive, complex flow control.</p>
+<p><a href="http://rubenverborgh.github.io/AsyncIterator/docs/">Read the full API documentation.</a></p>
+<h2>Data streams that only generate what you need</h2><p><code>AsyncIterator</code> allows functions to
+<strong>return multiple <em>asynchronously</em> and <em>lazily</em> created values</strong>.
+This adds a missing piece to JavaScript,
+which natively supports returning a single value synchronously
+and asynchronously (through <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise"><code>Promise</code></a>),
+but multiple values only synchronously (through <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Iteration_protocols"><code>Iterable</code></a>):</p>
+<table>
+  <tr>
+    <td>&nbsp;</td>
+    <th>single value</th>
+    <th>multiple values</th>
+  </tr>
+  <tr>
+    <th>synchronous</th>
+    <td><code>T getValue()</code></td>
+    <td><code>Iterable&lt;T&gt; getValues()</code></td>
+  </tr>
+  <tr>
+    <th>asynchronous</th>
+    <td><code>Promise&lt;T&gt; getValue()</code></td>
+    <td><strong><code>AsyncIterator&lt;T&gt; getValues()</code></strong></td>
+  </tr>
+</table>
+
+<p>Like <code>Iterable</code>, <strong>an <code>AsyncIterator</code> only generates items when you ask it to</strong>.
+This contrast with patterns such as <a href="http://reactivex.io/intro.html"><code>Observable</code></a>,
+which are data-driven and don't wait for consumers to process items.</p>
+<h3>The asynchronous iterator interface</h3><p>An asynchronous iterator is an object that exposes a series of data items by:</p>
+<ul>
+<li>implementing <a href="https://nodejs.org/api/events.html#events_class_eventemitter"><code>EventEmitter</code></a></li>
+<li>returning an item when you call <code>iterator.read</code> (yielding <code>null</code> when none is available at the moment)</li>
+<li>informing when new items might be available through <code>iterator.on('readable', callback)</code></li>
+<li>informing when no more items will become available through <code>iterator.on('end', callback)</code></li>
+<li>streaming all of its items when you register through <code>iterator.on('data', callback)</code></li>
+</ul>
+<p>Any object that conforms to the above conditions can be used with the AsyncIterator library
+(this includes <a href="https://nodejs.org/api/stream.html">Node.js Streams</a>).
+The <code>AsyncIterator</code> interface additionally exposes
+<a href="http://rubenverborgh.github.io/AsyncIterator/docs/AsyncIterator.html">several other methods and properties</a>.</p>
+<h2>Example: fetching Wikipedia links related to natural numbers</h2><p>In the example below, we create an iterator of links found on Wikipedia pages for natural numbers.</p>
+<pre class="prettyprint source lang-JavaScript"><code>var AsyncIterator = require('asynciterator');
+
+// Iterate over the natural numbers
+var numbers = new AsyncIterator.IntegerIterator({ start: 0, end: Infinity });
+// Transform these numbers into Wikipedia URLs
+var urls = numbers.map(function (number) {
+  return 'https://en.wikipedia.org/wiki/' + number;
+});
+// Fetch each corresponding Wikipedia page
+var pages = urls.transform(function (url, done) {
+  require('https').get(url, function (response) {
+    var page = '';
+    response.on('data', function (data) { page += data; });
+    response.on('end',  function () { pages._push(page); done(); });
+  });
+});
+// Extract the links from each page
+var links = pages.transform(function (page, done) {
+  var search = /href=&quot;([^&quot;]+)&quot;/g, match, resolve = require('url').resolve;
+  while (match = search.exec(page))
+    this._push(resolve('https://en.wikipedia.org/', match[1]));
+  done();
+});</code></pre><p>We could display a link every 0.1 seconds:</p>
+<pre class="prettyprint source lang-JavaScript"><code>setInterval(function () {
+  var link = links.read();
+  if (link) console.log(link);
+}, 100);</code></pre><p>Or we can get the first 30 links and display them:</p>
+<pre class="prettyprint source lang-JavaScript"><code>links.take(30).on('data', console.log);</code></pre><p>In both cases, pages from Wikipedia will only be fetched when needed—the data consumer is in control.
+This is what makes <code>AsyncIterator</code> <a href="https://en.wikipedia.org/wiki/Lazy_evaluation">lazy</a>.</p>
+<p>If we had implemented this using the <code>Observable</code> pattern,
+an entire flow of unnecessary pages would be fetched,
+because it is controlled by the data publisher instead.</p>
+<h2>Usage</h2><p><code>AsyncIterator</code> implements the <a href="https://nodejs.org/api/events.html#events_class_eventemitter"><code>EventEmitter</code></a> interface
+and a superset of the <a href="https://nodejs.org/api/stream.html"><code>Stream</code></a> interface.</p>
+<h3>Consuming an AsyncIterator in on-demand mode</h3><p>By default, an AsyncIterator is in <em>on-demand</em> mode,
+meaning it only generates items when asked to.</p>
+<p>The <a href="http://rubenverborgh.github.io/AsyncIterator/docs/AsyncIterator.html#read"><code>read</code> method</a> returns the next item,
+or <code>null</code> when no item is available.</p>
+<pre class="prettyprint source lang-JavaScript"><code>var numbers = new AsyncIterator.IntegerIterator({ start: 1, end: 2 });
+console.log(numbers.read()); // 1
+console.log(numbers.read()); // 2
+console.log(numbers.read()); // null</code></pre><p>If you receive <code>undefined</code>,
+you should wait until the next <a href="http://rubenverborgh.github.io/AsyncIterator/docs/AsyncIterator.html#.event:readable"><code>readable</code> event</a> before reading again.
+This event is not a guarantee that an item <em>will</em> be available.</p>
+<pre class="prettyprint source lang-JavaScript"><code>links.on('readable', function () {
+  var link;
+  while (link = links.read())
+    console.log(link);
+});</code></pre><p>The <a href="http://rubenverborgh.github.io/AsyncIterator/docs/AsyncIterator.html#.event:end"><code>end</code> event</a> is emitted after you have read the last item from the iterator.</p>
+<h3>Consuming an AsyncIterator in flow mode</h3><p>An AsyncIterator can be switched to <em>flow</em> mode by listening to the <a href="http://rubenverborgh.github.io/AsyncIterator/docs/AsyncIterator.html#.event:data"><code>data</code> event</a>.
+In flow mode, iterators generate items as fast as possible.</p>
+<pre class="prettyprint source lang-JavaScript"><code>var numbers = new AsyncIterator.IntegerIterator({ start: 1, end: 100 });
+numbers.on('data', function (number) { console.log('number', number); });
+numbers.on('end',  function () { console.log('all done!'); });</code></pre><p>To switch back to on-demand mode, simply remove all <code>data</code> listeners.</p>
+<h2>License</h2><p>The asynciterator library is copyrighted by <a href="http://ruben.verborgh.org/">Ruben Verborgh</a>
+and released under the <a href="http://opensource.org/licenses/MIT">MIT License</a>.</p></article>
+    </section>
+
+
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="ArrayIterator.html">ArrayIterator</a></li><li><a href="AsyncIterator.html">AsyncIterator</a></li><li><a href="BufferedIterator.html">BufferedIterator</a></li><li><a href="ClonedIterator.html">ClonedIterator</a></li><li><a href="EmptyIterator.html">EmptyIterator</a></li><li><a href="IntegerIterator.html">IntegerIterator</a></li><li><a href="MultiTransformIterator.html">MultiTransformIterator</a></li><li><a href="SimpleTransformIterator.html">SimpleTransformIterator</a></li><li><a href="SingletonIterator.html">SingletonIterator</a></li><li><a href="TransformIterator.html">TransformIterator</a></li></ul><h3>Events</h3><ul><li><a href="AsyncIterator.html#.event:data">data</a></li><li><a href="AsyncIterator.html#.event:end">end</a></li><li><a href="AsyncIterator.html#.event:readable">readable</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.0</a> on Thu Jun 30 2016 14:30:32 GMT-0700 (PDT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
